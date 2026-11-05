@@ -36,7 +36,7 @@ screen with eight buttons on it.
 | APK size | **2.3 MB** (debug, unminified) |
 | Third-party dependencies | **0** |
 | Resident memory | ~77 MB including the wallpaper bitmap and media session |
-| Target | Android 11 (API 30), landscape, 1280x720 |
+| Target | Android 8.1+ (API 27+), target Android 11 (API 30), landscape, 1280x720 |
 | Language | Kotlin |
 | Incremental build | ~8 seconds |
 
@@ -64,7 +64,7 @@ anywhere, the dock is tuned for one firmware family.
 
 | Feature | Works on | Notes |
 |---|---|---|
-| Clock, date, app drawer | **Any Android 11+ unit** | Nothing vendor specific. |
+| Clock, date, app drawer | **Any Android 8.1+ unit** | Nothing vendor specific. |
 | GPS speed | Any unit with a GPS receiver | Uses `Location.getSpeed()`, no CAN bus needed. |
 | Now playing | Any app publishing a `MediaSession` | Needs notification access granted once. |
 | Wallpaper | Any unit | Reads a file, no storage permission required. |

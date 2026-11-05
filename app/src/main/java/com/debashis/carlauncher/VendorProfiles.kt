@@ -200,7 +200,7 @@ object VendorProfiles {
             } else {
                 pm.getLaunchIntentForPackage(component) != null
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
     }

@@ -20,8 +20,8 @@ android {
 
     defaultConfig {
         applicationId = "com.debashis.carlauncher"
-        // The head unit is Android 11 / SDK 30 exactly. No compatibility shims needed.
-        minSdk = 30
+        // Supports Android 8.1+ (SDK 27+), targeting Android 11 (SDK 30).
+        minSdk = 27
         targetSdk = 30
         versionCode = 3
         versionName = "1.2"
@@ -52,6 +52,8 @@ android {
         // exactly avoids every behaviour shim. ExpiredTargetSdkVersion exists to enforce
         // Play Store policy, and this app is sideloaded, not published there.
         disable += "ExpiredTargetSdkVersion"
+        disable += "QueryAllPackagesPermission"
+        disable += "MissingPermission"
     }
 
     compileOptions {

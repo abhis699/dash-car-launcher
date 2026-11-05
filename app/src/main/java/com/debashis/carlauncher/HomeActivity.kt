@@ -1,6 +1,7 @@
 package com.debashis.carlauncher
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothProfile
@@ -22,6 +23,7 @@ import android.location.GnssStatus
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -114,20 +116,27 @@ class HomeActivity : Activity() {
         override fun onReceive(context: Context?, intent: Intent?) = updateBluetooth()
     }
 
-    private val locationListener = LocationListener { loc: Location ->
-        lastFixAt = SystemClock.elapsedRealtime()
-        // getSpeed() is metres per second. Never negative, but clamp anyway.
-        val ms = loc.speed.coerceAtLeast(0f)
-        // GPS jitters at a standstill, so a parked car reads 1 or 2. The deadband is held
-        // in m/s so it means the same thing in either unit.
-        val display = if (ms < DEADBAND_MS) 0f else ms * unitFactor()
-        speedView.text = display.roundToInt().toString()
-        driveSpeed?.text = display.roundToInt().toString()
+    private val locationListener = object : LocationListener {
+        override fun onLocationChanged(loc: Location) {
+            lastFixAt = SystemClock.elapsedRealtime()
+            // getSpeed() is metres per second. Never negative, but clamp anyway.
+            val ms = loc.speed.coerceAtLeast(0f)
+            // GPS jitters at a standstill, so a parked car reads 1 or 2. The deadband is held
+            // in m/s so it means the same thing in either unit.
+            val display = if (ms < DEADBAND_MS) 0f else ms * unitFactor()
+            speedView.text = display.roundToInt().toString()
+            driveSpeed?.text = display.roundToInt().toString()
 
-        lastKmh = if (ms < DEADBAND_MS) 0f else ms * 3.6f
-        Trip.onLocation(this, loc)
-        renderTrip()
-        updateDriveMode()
+            lastKmh = if (ms < DEADBAND_MS) 0f else ms * 3.6f
+            Trip.onLocation(this@HomeActivity, loc)
+            renderTrip()
+            updateDriveMode()
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
     }
 
     private fun unitFactor() =
@@ -233,38 +242,60 @@ class HomeActivity : Activity() {
      * Replace the file and the next return to the home screen picks it up.
      */
     private fun loadWallpaper() {
-        val view = findViewById<ImageView>(R.id.wallpaper)
-        val file = File(getExternalFilesDir(null), "wallpaper.jpg")
+        val view = findViewById<ImageView>(R.id.wallpaper) ?: return
+        val extDir = getExternalFilesDir(null) ?: filesDir
+        val file = File(extDir, "wallpaper.jpg")
         if (!file.exists()) {
             view.setImageDrawable(null)   // fall through to the system wallpaper
             return
         }
 
-        // Measure first so a 12 megapixel phone photo costs the same as a correctly
-        // sized one: decode straight down to roughly screen resolution.
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        try {
+            // Measure first so a 12 megapixel phone photo costs the same as a correctly
+            // sized one: decode straight down to roughly screen resolution.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
 
-        val target = resources.displayMetrics.widthPixels
-        var sample = 1
-        while (bounds.outWidth > 0 && bounds.outWidth / (sample * 2) >= target) sample *= 2
+            val target = resources.displayMetrics.widthPixels
+            var sample = 1
+            while (bounds.outWidth > 0 && bounds.outWidth / (sample * 2) >= target) sample *= 2
 
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
-            // Halves the memory and is invisible on a dark photo behind a scrim.
-            inPreferredConfig = Bitmap.Config.RGB_565
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                // Halves the memory and is invisible on a dark photo behind a scrim.
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeFile(file.absolutePath, opts)?.let { view.setImageBitmap(it) }
+        } catch (t: Throwable) {
+            view.setImageDrawable(null)
         }
-        BitmapFactory.decodeFile(file.absolutePath, opts)?.let { view.setImageBitmap(it) }
     }
 
     private fun hideSystemBars() {
-        window.setDecorFitsSystemWindows(false)
-        window.insetsController?.apply {
-            hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-            // Swipe from an edge still brings them back temporarily, so the vendor
-            // back and recents buttons are never permanently out of reach.
-            systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.apply {
+                hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                // Swipe from an edge still brings them back temporarily, so the vendor
+                // back and recents buttons are never permanently out of reach.
+                systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     // ---------------------------------------------------------------- dock
@@ -345,7 +376,7 @@ class HomeActivity : Activity() {
                 val themed = intent.component?.flattenToShortString()?.let { IconPacks.drawableFor(it) }
                 (themed ?: packageManager.getApplicationIcon(pkg)) to intent
             }
-        } catch (e: PackageManager.NameNotFoundException) {
+        } catch (e: Throwable) {
             null
         }
     }
@@ -388,7 +419,11 @@ class HomeActivity : Activity() {
             return
         }
         Prefs.setSetupShown(this, true)
-        startActivity(Intent(this, SetupActivity::class.java))
+        try {
+            startActivity(Intent(this, SetupActivity::class.java))
+        } catch (t: Throwable) {
+            // Setup activity could not be launched; fall back to default dock.
+        }
     }
 
     // -------------------------------------------------------- icon pack
@@ -713,12 +748,16 @@ class HomeActivity : Activity() {
     private fun setupMedia() {
         if (!notificationAccessGranted()) return
         val component = ComponentName(this, DashNotificationListener::class.java)
-        sessionManager = getSystemService(MediaSessionManager::class.java)
+        sessionManager = try {
+            getSystemService(MediaSessionManager::class.java)
+        } catch (t: Throwable) {
+            null
+        }
         try {
             sessionManager?.addOnActiveSessionsChangedListener(sessionsListener, component)
             bindController(sessionManager?.getActiveSessions(component))
-        } catch (e: SecurityException) {
-            // Access revoked between the check and the call. Bluetooth fallback still works.
+        } catch (e: Throwable) {
+            // Access revoked between the check and the call or media session unavailable.
         }
     }
 
@@ -802,17 +841,26 @@ class HomeActivity : Activity() {
 
     private fun appLabel(pkg: String): String = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-    } catch (e: PackageManager.NameNotFoundException) {
+    } catch (e: Throwable) {
         pkg
     }
 
     // -------------------------------------------------------- bluetooth
 
+    @SuppressLint("MissingPermission")
     private fun updateBluetooth() {
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        val connected = adapter != null &&
-                adapter.isEnabled &&
-                adapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
+        val adapter = try {
+            BluetoothAdapter.getDefaultAdapter()
+        } catch (t: Throwable) {
+            null
+        }
+        val connected = try {
+            adapter != null &&
+                    adapter.isEnabled &&
+                    adapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothAdapter.STATE_CONNECTED
+        } catch (t: Throwable) {
+            false
+        }
 
         btView.text = when {
             adapter == null || !adapter.isEnabled -> "Bluetooth off"
@@ -861,11 +909,18 @@ class HomeActivity : Activity() {
         val lm = locationManager ?: return
         try {
             lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener)
-            lm.registerGnssStatusCallback(mainExecutor, gnssCallback)
-        } catch (e: SecurityException) {
-            // Permission revoked between the check and the call. Leave the dash showing.
-        } catch (e: IllegalArgumentException) {
-            // No GPS provider on this build. Same outcome.
+        } catch (e: Throwable) {
+            // Permission revoked or GPS provider unavailable. Leave the dash showing.
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                lm.registerGnssStatusCallback(mainExecutor, gnssCallback)
+            } else {
+                @Suppress("DEPRECATION")
+                lm.registerGnssStatusCallback(gnssCallback, handler)
+            }
+        } catch (e: Throwable) {
+            // GNSS status reporting not supported on this device/ROM.
         }
     }
 
@@ -873,8 +928,12 @@ class HomeActivity : Activity() {
         val lm = locationManager ?: return
         try {
             lm.removeUpdates(locationListener)
+        } catch (e: Throwable) {
+            // Nothing to unwind.
+        }
+        try {
             lm.unregisterGnssStatusCallback(gnssCallback)
-        } catch (e: SecurityException) {
+        } catch (e: Throwable) {
             // Nothing to unwind.
         }
     }
