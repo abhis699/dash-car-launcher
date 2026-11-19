@@ -30,6 +30,9 @@ object Prefs {
     const val KEY_SETUP_SHOWN = "setup_shown"
     const val KEY_CLOCK_FORMAT = "clock_format"   // -1 follow system, 12, or 24
     const val KEY_UNITS = "units"                 // "kmh" or "mph"
+    const val KEY_HIDDEN_APPS = "hidden_apps"
+    const val KEY_LONG_PRESS_UNINSTALL = "long_press_uninstall"
+    const val KEY_CUSTOM_APP_ICONS = "custom_app_icons"
 
     const val CLOCK_SYSTEM = -1
 
@@ -78,7 +81,7 @@ object Prefs {
      * package exposes several launcher activities and the default one is wrong.
      * [label] overrides the app's own name. Blank means use whatever the app calls itself.
      */
-    data class Slot(val component: String, val label: String = "")
+    data class Slot(val component: String, val label: String = "", val iconId: String = "")
 
     /**
      * Shipped defaults, matching the imotor firmware family this was built on.
@@ -114,7 +117,7 @@ object Prefs {
             val out = ArrayList<Slot>(SLOTS)
             for (i in 0 until minOf(array.length(), SLOTS)) {
                 val o = array.getJSONObject(i)
-                out.add(Slot(o.optString("c", ""), o.optString("l", "")))
+                out.add(Slot(o.optString("c", ""), o.optString("l", ""), o.optString("i", "")))
             }
             // Tolerate a short or corrupt list rather than crashing the home screen.
             while (out.size < SLOTS) out.add(Slot(""))
@@ -131,6 +134,13 @@ object Prefs {
         save(context, current)
     }
 
+    fun setSlotIcon(context: Context, index: Int, iconId: String) {
+        if (index !in 0 until SLOTS) return
+        val current = dock(context).toMutableList()
+        current[index] = current[index].copy(iconId = iconId)
+        save(context, current)
+    }
+
     fun resetDock(context: Context) {
         prefs(context).edit().remove(KEY_DOCK).apply()
     }
@@ -138,7 +148,7 @@ object Prefs {
     private fun save(context: Context, slots: List<Slot>) {
         val array = JSONArray()
         for (s in slots) {
-            array.put(JSONObject().put("c", s.component).put("l", s.label))
+            array.put(JSONObject().put("c", s.component).put("l", s.label).put("i", s.iconId))
         }
         prefs(context).edit().putString(KEY_DOCK, array.toString()).apply()
     }
@@ -169,7 +179,7 @@ object Prefs {
             val out = ArrayList<Slot>(DRIVE_SLOTS)
             for (i in 0 until minOf(array.length(), DRIVE_SLOTS)) {
                 val o = array.getJSONObject(i)
-                out.add(Slot(o.optString("c", ""), o.optString("l", "")))
+                out.add(Slot(o.optString("c", ""), o.optString("l", ""), o.optString("i", "")))
             }
             while (out.size < DRIVE_SLOTS) out.add(Slot(""))
             out
@@ -183,7 +193,7 @@ object Prefs {
         val current = driveDock(context).toMutableList()
         current[index] = slot
         val array = JSONArray()
-        for (s in current) array.put(JSONObject().put("c", s.component).put("l", s.label))
+        for (s in current) array.put(JSONObject().put("c", s.component).put("l", s.label).put("i", s.iconId))
         prefs(context).edit().putString(KEY_DRIVE_DOCK, array.toString()).apply()
     }
 
@@ -256,5 +266,69 @@ object Prefs {
 
     fun setUnits(context: Context, value: String) {
         prefs(context).edit().putString(KEY_UNITS, value).apply()
+    }
+
+    // ----------------------------------------------------------- app management
+
+    fun hiddenApps(context: Context): Set<String> {
+        val raw = prefs(context).getString(KEY_HIDDEN_APPS, null) ?: return emptySet()
+        return try {
+            val arr = JSONArray(raw)
+            val result = HashSet<String>(arr.length())
+            for (i in 0 until arr.length()) result.add(arr.getString(i))
+            result
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+
+    fun setHiddenApps(context: Context, pkgs: Set<String>) {
+        val arr = JSONArray()
+        for (pkg in pkgs) arr.put(pkg)
+        prefs(context).edit().putString(KEY_HIDDEN_APPS, arr.toString()).apply()
+    }
+
+    fun isAppHidden(context: Context, pkg: String): Boolean =
+        hiddenApps(context).contains(pkg)
+
+    fun setAppHidden(context: Context, pkg: String, hidden: Boolean) {
+        val current = hiddenApps(context).toMutableSet()
+        if (hidden) current.add(pkg) else current.remove(pkg)
+        setHiddenApps(context, current)
+    }
+
+    fun longPressUninstallEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_LONG_PRESS_UNINSTALL, false)
+
+    fun setLongPressUninstallEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_LONG_PRESS_UNINSTALL, enabled).apply()
+    }
+
+    fun customAppIcons(context: Context): Map<String, String> {
+        val raw = prefs(context).getString(KEY_CUSTOM_APP_ICONS, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(raw)
+            val map = HashMap<String, String>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = obj.getString(key)
+            }
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun setCustomAppIcon(context: Context, pkg: String, iconId: String) {
+        val current = customAppIcons(context).toMutableMap()
+        if (iconId.isEmpty()) {
+            current.remove(pkg)
+        } else {
+            current[pkg] = iconId
+        }
+        val obj = JSONObject()
+        for ((k, v) in current) obj.put(k, v)
+        prefs(context).edit().putString(KEY_CUSTOM_APP_ICONS, obj.toString()).apply()
     }
 }

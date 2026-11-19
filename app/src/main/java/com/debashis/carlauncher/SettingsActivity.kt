@@ -1,6 +1,7 @@
 package com.debashis.carlauncher
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,6 +29,7 @@ class SettingsActivity : Activity() {
 
     private enum class Section(val title: String, val subtitle: String) {
         DOCK("Dock", "Eight slots. Tap one to choose a different app."),
+        APPS("Apps", "Manage hidden apps, uninstall actions, and custom app icons."),
         DRIVING("Driving", "What the screen does while the car is moving."),
         WALLPAPER("Wallpaper", "Shown behind the clock. Landscape images work best."),
         DISPLAY("Display", "Clock format and speed units."),
@@ -62,6 +64,11 @@ class SettingsActivity : Activity() {
         findViewById<View>(R.id.close).setOnClickListener { finish() }
 
         buildNav()
+        render()
+    }
+
+    override fun onResume() {
+        super.onResume()
         render()
     }
 
@@ -115,6 +122,7 @@ class SettingsActivity : Activity() {
         content.removeAllViews()
         when (section) {
             Section.DOCK -> renderDock()
+            Section.APPS -> renderApps()
             Section.DRIVING -> renderDriving()
             Section.WALLPAPER -> renderWallpaper()
             Section.DISPLAY -> renderDisplay()
@@ -123,6 +131,20 @@ class SettingsActivity : Activity() {
     }
 
     private fun renderDock() {
+        val setupGroup = newGroup()
+        val wizardRow = newRow(setupGroup)
+        wizardRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_settings)
+        wizardRow.findViewById<TextView>(R.id.row_title).text = "Setup Wizard"
+        wizardRow.findViewById<TextView>(R.id.row_sub).text = "Detect firmware and configure dock apps"
+        val setupVal = wizardRow.findViewById<TextView>(R.id.row_value)
+        setupVal.text = "Enter setup"
+        setupVal.setTextColor(getColor(R.color.accent))
+        wizardRow.setOnClickListener {
+            startActivity(Intent(this, SetupActivity::class.java))
+        }
+        setupGroup.addView(wizardRow)
+        content.addView(setupGroup)
+
         val group = newGroup()
         val slots = Prefs.dock(this)
 
@@ -137,7 +159,7 @@ class SettingsActivity : Activity() {
 
             when {
                 slot.component == Prefs.DRAWER -> {
-                    icon.setImageResource(R.drawable.ic_all_apps)
+                    icon.setImageDrawable(resolved)
                     sub.text = labelFor(slot, "All apps")
                     value.text = "App drawer"
                 }
@@ -162,12 +184,7 @@ class SettingsActivity : Activity() {
             }
 
             row.setOnClickListener {
-                editingSlot = index
-                startActivityForResult(
-                    Intent(this, AppPickerActivity::class.java)
-                        .putExtra(AppPickerActivity.EXTRA_SLOT, index),
-                    REQ_PICK_APP
-                )
+                showSlotOptionsDialog(index, slot)
             }
             group.addView(row)
         }
@@ -558,7 +575,13 @@ class SettingsActivity : Activity() {
 
     /** Null means the slot cannot be launched, which is what dims it on the home screen. */
     private fun resolve(slot: Prefs.Slot): Drawable? {
-        if (slot.component.isEmpty() || slot.component == Prefs.DRAWER) return null
+        if (slot.component.isEmpty()) return null
+        if (slot.component == Prefs.DRAWER) {
+            val custom = HeadunitIcons.getCustomIcon(this, Prefs.DRAWER, slot.iconId)
+            return custom ?: getDrawable(R.drawable.ic_apple_all_apps)
+        }
+        val custom = HeadunitIcons.getCustomIcon(this, slot.component, slot.iconId)
+        if (custom != null) return custom
         return try {
             if (slot.component.contains('/')) {
                 val pkg = slot.component.substringBefore('/')
@@ -572,6 +595,187 @@ class SettingsActivity : Activity() {
         } catch (e: Throwable) {
             null
         }
+    }
+
+    private fun showSlotOptionsDialog(index: Int, slot: Prefs.Slot) {
+        val appName = if (slot.label.isNotBlank()) slot.label
+        else if (slot.component.isNotEmpty()) appLabel(slot.component.substringBefore('/'))
+        else "Empty"
+        val title = "Slot ${index + 1} ($appName)"
+
+        val options = arrayOf("Change App", "Change Icon", "Clear Slot")
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        editingSlot = index
+                        startActivityForResult(
+                            Intent(this, AppPickerActivity::class.java)
+                                .putExtra(AppPickerActivity.EXTRA_SLOT, index),
+                            REQ_PICK_APP
+                        )
+                    }
+                    1 -> showSlotIconPickerDialog(index)
+                    2 -> {
+                        Prefs.setSlot(this, index, Prefs.Slot(""))
+                        render()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSlotIconPickerDialog(index: Int) {
+        val iconOptions = mutableListOf<Pair<String, String>>()
+        iconOptions.add("default" to "Default / Original App Icon")
+        for (entry in HeadunitIcons.ALL_ICONS) {
+            iconOptions.add(entry.id to entry.label)
+        }
+
+        val names = iconOptions.map { it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Icon for Slot ${index + 1}")
+            .setItems(names) { _, which ->
+                val (id, label) = iconOptions[which]
+                Prefs.setSlotIcon(this, index, id)
+                render()
+                Toast.makeText(this, "Slot ${index + 1} icon set to $label", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ----------------------------------------------------------- apps section
+
+    private fun renderApps() {
+        val group = newGroup()
+
+        // 1. Hidden apps
+        val hiddenApps = Prefs.hiddenApps(this)
+        val hiddenRow = newRow(group)
+        hiddenRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_all_apps)
+        hiddenRow.findViewById<TextView>(R.id.row_title).text = "Hidden apps"
+        hiddenRow.findViewById<TextView>(R.id.row_sub).text = "Hide unused or bloatware apps from the drawer"
+        val hiddenVal = hiddenRow.findViewById<TextView>(R.id.row_value)
+        hiddenVal.text = if (hiddenApps.isEmpty()) "None hidden" else "${hiddenApps.size} hidden"
+        if (hiddenApps.isNotEmpty()) hiddenVal.setTextColor(getColor(R.color.accent))
+        hiddenRow.setOnClickListener { showHiddenAppsDialog() }
+        group.addView(hiddenRow)
+
+        // 2. Long-press to uninstall
+        val uninstallRow = newRow(group)
+        val uninstallEnabled = Prefs.longPressUninstallEnabled(this)
+        uninstallRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_settings)
+        uninstallRow.findViewById<TextView>(R.id.row_title).text = "Long-press to uninstall"
+        uninstallRow.findViewById<TextView>(R.id.row_sub).text = "Prompt to uninstall when long-pressing an app in the drawer"
+        val uninstallVal = uninstallRow.findViewById<TextView>(R.id.row_value)
+        uninstallVal.text = if (uninstallEnabled) "On" else "Off"
+        if (uninstallEnabled) uninstallVal.setTextColor(getColor(R.color.accent))
+        uninstallRow.setOnClickListener {
+            Prefs.setLongPressUninstallEnabled(this, !uninstallEnabled)
+            render()
+        }
+        group.addView(uninstallRow)
+
+        // 3. Custom app icons
+        val customIcons = Prefs.customAppIcons(this)
+        val customIconRow = newRow(group)
+        customIconRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_maps)
+        customIconRow.findViewById<TextView>(R.id.row_title).text = "Custom app icons"
+        customIconRow.findViewById<TextView>(R.id.row_sub).text = "Choose custom car icons for your installed apps"
+        val customVal = customIconRow.findViewById<TextView>(R.id.row_value)
+        customVal.text = if (customIcons.isEmpty()) "Default" else "${customIcons.size} customized"
+        if (customIcons.isNotEmpty()) customVal.setTextColor(getColor(R.color.accent))
+        customIconRow.setOnClickListener { showCustomIconAppPicker() }
+        group.addView(customIconRow)
+
+        content.addView(group)
+    }
+
+    private data class AppInfoItem(val label: String, val pkg: String)
+
+    private fun getInstalledLaunchableApps(): List<AppInfoItem> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolved = packageManager.queryIntentActivities(intent, 0)
+        val seen = HashSet<String>()
+        val list = mutableListOf<AppInfoItem>()
+        for (info in resolved) {
+            val pkg = info.activityInfo.packageName
+            if (pkg == packageName) continue
+            if (!seen.add(pkg)) continue
+            list.add(
+                AppInfoItem(
+                    label = info.loadLabel(packageManager).toString(),
+                    pkg = pkg
+                )
+            )
+        }
+        list.sortBy { it.label.lowercase() }
+        return list
+    }
+
+    private fun showHiddenAppsDialog() {
+        val apps = getInstalledLaunchableApps()
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "No apps found", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val hiddenSet = Prefs.hiddenApps(this).toMutableSet()
+        val labels = apps.map { it.label }.toTypedArray()
+        val checked = BooleanArray(apps.size) { i -> hiddenSet.contains(apps[i].pkg) }
+
+        AlertDialog.Builder(this)
+            .setTitle("Hide Apps from Drawer")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val pkg = apps[which].pkg
+                if (isChecked) hiddenSet.add(pkg) else hiddenSet.remove(pkg)
+            }
+            .setPositiveButton("Save") { _, _ ->
+                Prefs.setHiddenApps(this, hiddenSet)
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCustomIconAppPicker() {
+        val apps = getInstalledLaunchableApps()
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "No apps found", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val labels = apps.map { it.label }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Select App to Customize Icon")
+            .setItems(labels) { _, which ->
+                showIconChoiceDialog(apps[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showIconChoiceDialog(app: AppInfoItem) {
+        val iconOptions = mutableListOf<Pair<String, String>>()
+        iconOptions.add("default" to "Original App Icon")
+        for (entry in HeadunitIcons.ALL_ICONS) {
+            iconOptions.add(entry.id to entry.label)
+        }
+
+        val names = iconOptions.map { it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Icon for ${app.label}")
+            .setItems(names) { _, which ->
+                val (id, label) = iconOptions[which]
+                Prefs.setCustomAppIcon(this, app.pkg, id)
+                Toast.makeText(this, "${app.label} icon set to $label", Toast.LENGTH_SHORT).show()
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

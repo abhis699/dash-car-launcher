@@ -1,69 +1,76 @@
 package com.debashis.carlauncher
 
 import android.app.Activity
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
 /**
- * First-run firmware detection. Not wired into the manifest or into [HomeActivity] yet:
- * someone else owns that integration. To turn this on, add to AndroidManifest.xml:
+ * First-run firmware detection and interactive dock setup.
  *
- * ```xml
- * <activity
- *     android:name=".SetupActivity"
- *     android:exported="false"
- *     android:screenOrientation="landscape"
- *     android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
- *     android:excludeFromRecents="true"
- *     android:theme="@style/DashTheme.Opaque" />
- * ```
- *
- * Launch condition: first run only, before the dock is ever shown. The natural gate is
- * whether [Prefs.KEY_DOCK] is unset (`prefs(context).contains(Prefs.KEY_DOCK) == false`),
- * since that is also exactly the condition under which [Prefs.dock] is currently serving the
- * imotor-shaped [Prefs] defaults rather than something the user chose. [HomeActivity.onCreate]
- * would check that and route here instead of drawing the dock. Once the user taps either
- * button this activity should finish and never be shown again on that install, because a
- * detection screen that reappears after the user already chose "Set up manually" would just
- * be a second, redundant settings screen.
+ * Allows drivers to review auto-detected apps (Navigation, Music, Radio, Phone,
+ * Video/YouTube, Settings, Aux, Mirroring). If an app is not automatically matched,
+ * it is left empty and can be clicked to choose any installed app via [AppPickerActivity].
  */
 class SetupActivity : Activity() {
 
+    companion object {
+        private const val REQ_PICK_ROLE = 201
+    }
+
+    private lateinit var summaryView: TextView
     private lateinit var content: LinearLayout
     private lateinit var result: VendorProfiles.Result
+    private val currentAssignments = mutableMapOf<VendorProfiles.Role, String>()
+    private var editingRole: VendorProfiles.Role? = null
 
     private val roleLabels = mapOf(
         VendorProfiles.Role.PHONE_MIRRORING to "Phone mirroring",
+        VendorProfiles.Role.NAVIGATION to "Navigation / Maps",
         VendorProfiles.Role.MUSIC to "Music",
         VendorProfiles.Role.RADIO to "Radio",
         VendorProfiles.Role.PHONE to "Phone",
-        VendorProfiles.Role.BLUETOOTH to "Bluetooth",
+        VendorProfiles.Role.VIDEO to "Video / YouTube",
+        VendorProfiles.Role.SETTINGS to "Settings",
         VendorProfiles.Role.AUX to "AUX / AV-IN",
-        VendorProfiles.Role.VIDEO to "Video",
-        VendorProfiles.Role.SETTINGS to "Settings"
+        VendorProfiles.Role.BLUETOOTH to "Bluetooth"
+    )
+
+    private val allRoles = listOf(
+        VendorProfiles.Role.PHONE_MIRRORING,
+        VendorProfiles.Role.NAVIGATION,
+        VendorProfiles.Role.MUSIC,
+        VendorProfiles.Role.RADIO,
+        VendorProfiles.Role.PHONE,
+        VendorProfiles.Role.VIDEO,
+        VendorProfiles.Role.SETTINGS,
+        VendorProfiles.Role.AUX,
+        VendorProfiles.Role.BLUETOOTH
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Detection never throws, but this screen exists precisely for unfamiliar hardware,
-        // so guard it anyway rather than trust that promise blindly on first run.
         result = try {
             VendorProfiles.detect(packageManager)
         } catch (e: Exception) {
             VendorProfiles.Result("Generic Android", 0, 0, emptyMap())
         }
 
-        // setContentView before hideSystemBars: the latter reaches through to the DecorView,
-        // which does not exist until a content view is set, and the getter throws rather than
-        // returning null. This crashed every launch of this screen in v1.2.
+        currentAssignments.clear()
+        currentAssignments.putAll(result.resolved)
+
         setContentView(buildRoot())
         hideSystemBars()
     }
@@ -93,6 +100,20 @@ class SetupActivity : Activity() {
         if (hasFocus) hideSystemBars()
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_ROLE && resultCode == RESULT_OK) {
+            val role = editingRole ?: return
+            val component = data?.getStringExtra(AppPickerActivity.EXTRA_COMPONENT).orEmpty()
+            if (component.isEmpty() || component == Prefs.DRAWER) {
+                currentAssignments.remove(role)
+            } else {
+                currentAssignments[role] = component
+            }
+            refreshRows()
+        }
+    }
+
     // ---------------------------------------------------------------- layout
 
     private fun buildRoot(): View {
@@ -110,13 +131,13 @@ class SetupActivity : Activity() {
         }
         root.addView(heading)
 
-        val summary = TextView(this).apply {
+        summaryView = TextView(this).apply {
             text = summaryLine()
             setTextColor(getColor(R.color.ink_soft))
             textSize = 15f
             setPadding(0, dp(6), 0, dp(18))
         }
-        root.addView(summary)
+        root.addView(summaryView)
 
         val scroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -128,14 +149,8 @@ class SetupActivity : Activity() {
             setBackgroundResource(R.drawable.group_bg)
             clipToOutline = true
         }
-        for (role in listOf(
-            VendorProfiles.Role.PHONE_MIRRORING, VendorProfiles.Role.MUSIC,
-            VendorProfiles.Role.RADIO, VendorProfiles.Role.PHONE,
-            VendorProfiles.Role.BLUETOOTH, VendorProfiles.Role.AUX,
-            VendorProfiles.Role.VIDEO, VendorProfiles.Role.SETTINGS
-        )) {
-            content.addView(buildRoleRow(role))
-        }
+
+        populateRows()
         scroll.addView(content)
         root.addView(scroll)
 
@@ -143,12 +158,26 @@ class SetupActivity : Activity() {
         return root
     }
 
+    private fun populateRows() {
+        content.removeAllViews()
+        for (role in allRoles) {
+            content.addView(buildRoleRow(role))
+        }
+    }
+
+    private fun refreshRows() {
+        summaryView.text = summaryLine()
+        populateRows()
+    }
+
     private fun summaryLine(): String {
         val family = result.family
-        return if (result.filled == 0) {
-            "$family firmware: no apps matched automatically"
+        val filled = currentAssignments.size
+        val total = allRoles.size
+        return if (filled == 0) {
+            "$family firmware: tap any section below to assign an app"
         } else {
-            "$family firmware detected, ${result.filled} of ${result.attempted} apps matched"
+            "$family firmware detected, $filled of $total apps configured (tap to change)"
         }
     }
 
@@ -157,37 +186,106 @@ class SetupActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundResource(R.drawable.row_bg)
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(72)
-            setPadding(dp(18), dp(10), dp(18), dp(10))
+            minimumHeight = dp(68)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            isClickable = true
+            isFocusable = true
+        }
+
+        val component = currentAssignments[role]
+        val icon = ImageView(this).apply {
+            val size = dp(42)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                marginEnd = dp(14)
+            }
+            setBackgroundResource(R.drawable.squircle_plate)
+            val pad = dp(6)
+            setPadding(pad, pad, pad, pad)
+            setImageDrawable(resolveIcon(component))
+        }
+        row.addView(icon)
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
         val title = TextView(this).apply {
             text = roleLabels[role] ?: role.name
             setTextColor(getColor(R.color.ink))
             textSize = 16f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        row.addView(title)
+        textCol.addView(title)
 
-        val matched = result.resolved[role]
+        val sub = TextView(this).apply {
+            textSize = 13f
+            if (!component.isNullOrEmpty()) {
+                text = resolveAppLabel(component)
+                setTextColor(getColor(R.color.ink_soft))
+            } else {
+                text = "Empty (Tap to choose app)"
+                setTextColor(getColor(R.color.accent))
+            }
+        }
+        textCol.addView(sub)
+        row.addView(textCol)
+
         val value = TextView(this).apply {
-            textSize = 14f
-            if (matched != null) {
-                text = matched.substringBefore('/')
+            textSize = 13f
+            if (!component.isNullOrEmpty()) {
+                text = component.substringBefore('/')
                 setTextColor(getColor(R.color.muted))
             } else {
-                text = "Not matched"
+                text = "Not set"
                 setTextColor(getColor(R.color.accent))
             }
         }
         row.addView(value)
+
+        row.setOnClickListener {
+            editingRole = role
+            startActivityForResult(
+                Intent(this, AppPickerActivity::class.java)
+                    .putExtra(AppPickerActivity.EXTRA_SLOT, role.ordinal),
+                REQ_PICK_ROLE
+            )
+        }
+
         return row
+    }
+
+    private fun resolveIcon(component: String?): Drawable? {
+        if (component.isNullOrEmpty()) return null
+        val custom = HeadunitIcons.getCustomIcon(this, component)
+        if (custom != null) return custom
+
+        return try {
+            val pkg = component.substringBefore('/')
+            if (component.contains('/')) {
+                val cn = ComponentName(pkg, component.substringAfter('/'))
+                packageManager.getActivityInfo(cn, 0).loadIcon(packageManager)
+            } else {
+                packageManager.getApplicationIcon(pkg)
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    private fun resolveAppLabel(component: String): String {
+        return try {
+            val pkg = component.substringBefore('/')
+            val appInfo = packageManager.getApplicationInfo(pkg, 0)
+            packageManager.getApplicationLabel(appInfo).toString()
+        } catch (t: Throwable) {
+            component.substringBefore('/')
+        }
     }
 
     private fun buildButtons(): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(20), 0, 0)
+            setPadding(0, dp(18), 0, 0)
         }
 
         val skip = TextView(this).apply {
@@ -195,7 +293,7 @@ class SetupActivity : Activity() {
             setTextColor(getColor(R.color.ink_soft))
             textSize = 16f
             gravity = Gravity.CENTER
-            minimumHeight = dp(72)
+            minimumHeight = dp(64)
             setBackgroundResource(R.drawable.row_bg)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = dp(12)
@@ -209,7 +307,7 @@ class SetupActivity : Activity() {
             setTextColor(getColor(R.color.accent_ink))
             textSize = 16f
             gravity = Gravity.CENTER
-            minimumHeight = dp(72)
+            minimumHeight = dp(64)
             setBackgroundColor(getColor(R.color.accent))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
@@ -223,10 +321,11 @@ class SetupActivity : Activity() {
     }
 
     private fun applyDock() {
-        val components = VendorProfiles.toDockComponents(result)
+        val components = VendorProfiles.toDockComponents(currentAssignments)
         for (i in components.indices) {
             Prefs.setSlot(this, i, Prefs.Slot(components[i]))
         }
+        Prefs.setSetupShown(this, true)
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()

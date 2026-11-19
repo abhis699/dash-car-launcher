@@ -14,7 +14,7 @@ import android.content.pm.PackageManager
  */
 object VendorProfiles {
 
-    enum class Role { PHONE_MIRRORING, MUSIC, RADIO, PHONE, AUX, VIDEO, SETTINGS, BLUETOOTH }
+    enum class Role { PHONE_MIRRORING, NAVIGATION, MUSIC, RADIO, PHONE, AUX, VIDEO, SETTINGS, BLUETOOTH }
 
     /**
      * One firmware family. [candidates] is checked in order per role, first match wins,
@@ -44,11 +44,17 @@ object VendorProfiles {
                 "com.imotor.phoneconnect/com.imotor.phoneconnect.Carplay",
                 "com.imotor.phoneconnect/com.imotor.phoneconnect.AndroidAuto"
             ),
-            Role.MUSIC to listOf("com.imotor.music"),
+            Role.NAVIGATION to listOf(
+                "com.google.android.apps.maps",
+                "com.autonavi.amapauto",
+                "com.waze",
+                "com.here.app.maps"
+            ),
+            Role.MUSIC to listOf("com.imotor.music", "com.spotify.music"),
             Role.RADIO to listOf("com.imotor.fmam"),
             Role.PHONE to listOf("com.imotor.contacts/com.imotor.contacts.ui.MainActivity"),
             Role.AUX to listOf("com.imotor.aux", "com.imotor.avin"),
-            Role.VIDEO to listOf("com.imotor.video"),
+            Role.VIDEO to listOf("com.google.android.youtube", "com.imotor.video", "org.videolan.vlc"),
             Role.SETTINGS to listOf("com.android.settings"),
             Role.BLUETOOTH to listOf("com.imotor.btmusic")
         )
@@ -66,11 +72,12 @@ object VendorProfiles {
         family = "FYT",
         candidates = mapOf(
             Role.PHONE_MIRRORING to listOf("com.mixtorrent.carplayer", "com.hct.carplay.cp"),
-            Role.MUSIC to listOf("com.android.music", "cn.kuwo.player"),
+            Role.NAVIGATION to listOf("com.google.android.apps.maps", "com.waze", "com.autonavi.amapauto"),
+            Role.MUSIC to listOf("com.android.music", "cn.kuwo.player", "com.spotify.music"),
             Role.RADIO to listOf("com.android.fmradio"),
             Role.PHONE to listOf("com.android.contacts"),
             Role.AUX to listOf("com.android.aux"),
-            Role.VIDEO to listOf("com.android.gallery3d"),
+            Role.VIDEO to listOf("com.google.android.youtube", "com.android.gallery3d"),
             Role.SETTINGS to listOf("com.android.settings"),
             Role.BLUETOOTH to listOf("com.android.bluetooth")
         )
@@ -80,11 +87,12 @@ object VendorProfiles {
         family = "TS-series",
         candidates = mapOf(
             Role.PHONE_MIRRORING to listOf("com.eny.carplay", "com.carlink.carplay"),
+            Role.NAVIGATION to listOf("com.google.android.apps.maps", "com.waze"),
             Role.MUSIC to listOf("com.ts.music", "com.android.music"),
             Role.RADIO to listOf("com.ts.radio", "com.android.fmradio"),
             Role.PHONE to listOf("com.android.contacts"),
             Role.AUX to listOf("com.ts.aux"),
-            Role.VIDEO to listOf("com.android.gallery3d"),
+            Role.VIDEO to listOf("com.google.android.youtube", "com.android.gallery3d"),
             Role.SETTINGS to listOf("com.android.settings"),
             Role.BLUETOOTH to listOf("com.android.bluetooth")
         )
@@ -94,11 +102,12 @@ object VendorProfiles {
         family = "MTK/AC8227L",
         candidates = mapOf(
             Role.PHONE_MIRRORING to listOf("com.mtcmobi.hicar", "com.mtk.carplay"),
+            Role.NAVIGATION to listOf("com.google.android.apps.maps", "com.waze"),
             Role.MUSIC to listOf("com.android.music"),
             Role.RADIO to listOf("com.android.fmradio"),
             Role.PHONE to listOf("com.android.contacts"),
             Role.AUX to listOf("com.mtk.aux"),
-            Role.VIDEO to listOf("com.android.gallery3d"),
+            Role.VIDEO to listOf("com.google.android.youtube", "com.android.gallery3d"),
             Role.SETTINGS to listOf("com.android.settings"),
             Role.BLUETOOTH to listOf("com.android.bluetooth")
         )
@@ -114,12 +123,13 @@ object VendorProfiles {
      * something rather than override a real match.
      */
     private val GENERIC_HINTS: Map<Role, List<String>> = mapOf(
-        Role.PHONE_MIRRORING to listOf("carplay", "androidauto", "carlink", "hicar", "airplay"),
-        Role.MUSIC to listOf("music", "player", "mediaplayer"),
+        Role.PHONE_MIRRORING to listOf("carplay", "androidauto", "carlink", "hicar", "airplay", "zlink", "autokit"),
+        Role.NAVIGATION to listOf("maps", "map", "navi", "navigation", "waze", "amap", "autonavi", "sygic", "yandexnavi"),
+        Role.MUSIC to listOf("music", "player", "mediaplayer", "spotify"),
         Role.RADIO to listOf("radio", "fmam", "fmradio"),
         Role.PHONE to listOf("contacts", "dialer", "phone"),
         Role.AUX to listOf("aux", "avin"),
-        Role.VIDEO to listOf("video", "gallery", "filemanager"),
+        Role.VIDEO to listOf("youtube", "video", "gallery", "filemanager", "vlc"),
         Role.SETTINGS to listOf("settings"),
         Role.BLUETOOTH to listOf("btmusic", "bluetooth")
     )
@@ -213,19 +223,21 @@ object VendorProfiles {
      * since a blank tile is honest and a wrong one is a tap that does nothing useful while
      * driving.
      */
-    private val SLOT_ORDER = listOf(
-        Role.PHONE_MIRRORING, Role.MUSIC, Role.RADIO, Role.PHONE,
-        Role.BLUETOOTH, Role.AUX, Role.VIDEO, Role.SETTINGS
+    val SLOT_ORDER = listOf(
+        Role.PHONE_MIRRORING, Role.NAVIGATION, Role.MUSIC, Role.RADIO,
+        Role.PHONE, Role.VIDEO, Role.SETTINGS
     )
 
-    /** Always returns exactly [Prefs.SLOTS] entries, with the drawer marker in the last one. */
-    fun toDockComponents(result: Result): List<String> {
+    fun toDockComponents(resolved: Map<Role, String>): List<String> {
         val out = ArrayList<String>(Prefs.SLOTS)
         for (i in 0 until Prefs.SLOTS - 1) {
             val role = SLOT_ORDER.getOrNull(i)
-            out.add(if (role != null) result.resolved[role].orEmpty() else "")
+            out.add(if (role != null) resolved[role].orEmpty() else "")
         }
         out.add(Prefs.DRAWER)
         return out
     }
+
+    /** Always returns exactly [Prefs.SLOTS] entries, with the drawer marker in the last one. */
+    fun toDockComponents(result: Result): List<String> = toDockComponents(result.resolved)
 }

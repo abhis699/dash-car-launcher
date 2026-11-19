@@ -76,7 +76,7 @@ class AppPickerActivity : Activity() {
         entries.clear()
 
         // Two slot options that are not apps.
-        entries.add(Entry("All apps", Prefs.DRAWER, getDrawable(R.drawable.ic_all_apps)))
+        entries.add(Entry("All apps", Prefs.DRAWER, getDrawable(R.drawable.ic_apple_all_apps)))
         entries.add(Entry("Leave empty", "", null))
 
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -90,11 +90,13 @@ class AppPickerActivity : Activity() {
             // CarPlay, Android Auto, AndroidLink and Airplay as separate activities, and
             // picking "the package" would silently land on the wrong one.
             val component = "$pkg/${info.activityInfo.name}"
+            val themed = IconPacks.drawableFor(component)
+                ?: HeadunitIcons.getCustomIcon(this, component)
             apps.add(
                 Entry(
                     label = info.loadLabel(packageManager).toString(),
                     component = component,
-                    icon = info.loadIcon(packageManager)
+                    icon = themed ?: info.loadIcon(packageManager)
                 )
             )
         }

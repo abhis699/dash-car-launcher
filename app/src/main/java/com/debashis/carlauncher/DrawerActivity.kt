@@ -91,11 +91,13 @@ class DrawerActivity : Activity() {
         // Default flags exclude disabled components, which is what we want: a debloated
         // package should simply not appear here.
         val resolved: List<ResolveInfo> = packageManager.queryIntentActivities(intent, 0)
+        val hidden = Prefs.hiddenApps(this)
 
         val seen = HashSet<String>()
         for (info in resolved) {
             val pkg = info.activityInfo.packageName
             if (pkg == packageName) continue      // do not list ourselves
+            if (hidden.contains(pkg)) continue    // user hid this app
             if (!seen.add(pkg)) continue          // one row per package
             entries.add(
                 Entry(
@@ -140,6 +142,14 @@ class DrawerActivity : Activity() {
                 view.findViewById<TextView>(R.id.label).text = entry.label
                 view.setOnClickListener {
                     packageManager.getLaunchIntentForPackage(entry.pkg)?.let { startActivity(it) }
+                }
+                view.setOnLongClickListener {
+                    if (Prefs.longPressUninstallEnabled(this@DrawerActivity)) {
+                        showUninstallDialog(entry)
+                        true
+                    } else {
+                        false
+                    }
                 }
                 icons.add(view.findViewById(R.id.icon))
 
@@ -201,6 +211,7 @@ class DrawerActivity : Activity() {
                         val component =
                             "${entry.info.activityInfo.packageName}/${entry.info.activityInfo.name}"
                         val themed = IconPacks.drawableFor(component)
+                            ?: HeadunitIcons.getCustomIcon(this@DrawerActivity, component)
                         view.setImageDrawable(themed ?: entry.info.loadIcon(packageManager))
                     }
                 } else if (view.drawable != null) {
@@ -208,6 +219,30 @@ class DrawerActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun showUninstallDialog(entry: Entry) {
+        val isSystemApp = (entry.info.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        if (isSystemApp) {
+            android.widget.Toast.makeText(
+                this,
+                "${entry.label} is a system app and cannot be uninstalled",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Uninstall App")
+            .setMessage("Do you want to uninstall ${entry.label}?")
+            .setPositiveButton("Uninstall") { _, _ ->
+                val intent = Intent(Intent.ACTION_DELETE).apply {
+                    data = android.net.Uri.parse("package:${entry.pkg}")
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun setActiveDot(page: Int) {

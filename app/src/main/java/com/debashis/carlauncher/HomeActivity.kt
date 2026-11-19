@@ -3,6 +3,7 @@ package com.debashis.carlauncher
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
@@ -36,6 +37,7 @@ import android.view.WindowInsetsController
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -54,6 +56,7 @@ class HomeActivity : Activity() {
 
     private companion object {
         const val REQ_LOCATION = 1
+        const val REQ_PICK_SLOT = 101
 
         /**
          * A frozen speed is worse than no speed: it reads as real while being wrong.
@@ -199,6 +202,9 @@ class HomeActivity : Activity() {
 
         findViewById<View>(R.id.screen_off).setOnClickListener { setScreenOff(false) }
         clockView.setOnLongClickListener { setScreenOff(true); true }
+        findViewById<View>(R.id.btn_settings)?.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
 
         npPlay.setOnClickListener {
             val c = controller ?: return@setOnClickListener
@@ -300,12 +306,25 @@ class HomeActivity : Activity() {
 
     // ---------------------------------------------------------------- dock
 
+    private var editingSlot = -1
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_SLOT && resultCode == RESULT_OK && editingSlot >= 0) {
+            val component = data?.getStringExtra(AppPickerActivity.EXTRA_COMPONENT) ?: return
+            val label = data.getStringExtra(AppPickerActivity.EXTRA_LABEL).orEmpty()
+            Prefs.setSlot(this, editingSlot, Prefs.Slot(component, label))
+            buildDock()
+            editingSlot = -1
+        }
+    }
+
     private fun buildDock() {
         val dock = findViewById<LinearLayout>(R.id.dock)
         dock.removeAllViews()
         val inflater = LayoutInflater.from(this)
 
-        for (slot in Prefs.dock(this)) {
+        for ((index, slot) in Prefs.dock(this).withIndex()) {
             // An empty slot still occupies its share of the row, so the remaining tiles do
             // not shuffle sideways every time one is cleared.
             val view = inflater.inflate(R.layout.dock_item, dock, false)
@@ -319,10 +338,10 @@ class HomeActivity : Activity() {
                 }
 
                 slot.component == Prefs.DRAWER -> {
-                    icon.setImageResource(R.drawable.ic_all_apps)
-                    icon.setBackgroundResource(R.drawable.squircle_neutral)
-                    val pad = dp(28)
-                    icon.setPadding(pad, pad, pad, pad)
+                    val custom = HeadunitIcons.getCustomIcon(this, Prefs.DRAWER, slot.iconId)
+                    icon.setImageDrawable(custom ?: getDrawable(R.drawable.ic_apple_all_apps))
+                    icon.background = null
+                    icon.setPadding(0, 0, 0, 0)
                     label.text = if (slot.label.isNotBlank()) slot.label else getString(R.string.all_apps)
                     view.setOnClickListener {
                         startActivity(Intent(this, DrawerActivity::class.java))
@@ -330,7 +349,7 @@ class HomeActivity : Activity() {
                 }
 
                 else -> {
-                    val resolved = resolve(slot.component)
+                    val resolved = resolve(slot)
                     if (resolved == null) {
                         // Package missing, disabled, or exposing no launchable activity.
                         // Dim it rather than crashing or lying about what is there.
@@ -346,18 +365,73 @@ class HomeActivity : Activity() {
                 }
             }
 
-            // Long press anywhere on the dock opens Settings. A dedicated Settings tile would
-            // cost one of only eight app slots.
+            // Long press an app slot directly opens options to change app or change icon.
+            // Long press on the drawer slot opens Settings.
             view.setOnLongClickListener {
-                startActivity(Intent(this, SettingsActivity::class.java))
+                if (slot.component == Prefs.DRAWER) {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                } else {
+                    showSlotOptionsDialog(index, slot)
+                }
                 true
             }
             dock.addView(view)
         }
     }
 
+    private fun showSlotOptionsDialog(index: Int, slot: Prefs.Slot) {
+        val appName = if (slot.label.isNotBlank()) slot.label
+        else if (slot.component.isNotEmpty()) appLabel(slot.component.substringBefore('/'))
+        else "Empty"
+        val title = "Slot ${index + 1} ($appName)"
+
+        val options = arrayOf("Change App", "Change Icon", "Clear Slot")
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        editingSlot = index
+                        startActivityForResult(
+                            Intent(this, AppPickerActivity::class.java)
+                                .putExtra(AppPickerActivity.EXTRA_SLOT, index),
+                            REQ_PICK_SLOT
+                        )
+                    }
+                    1 -> showSlotIconPicker(index)
+                    2 -> {
+                        Prefs.setSlot(this, index, Prefs.Slot(""))
+                        buildDock()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showSlotIconPicker(index: Int) {
+        val iconOptions = mutableListOf<Pair<String, String>>()
+        iconOptions.add("default" to "Default / Original App Icon")
+        for (entry in HeadunitIcons.ALL_ICONS) {
+            iconOptions.add(entry.id to entry.label)
+        }
+
+        val names = iconOptions.map { it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Icon for Slot ${index + 1}")
+            .setItems(names) { _, which ->
+                val (id, label) = iconOptions[which]
+                Prefs.setSlotIcon(this, index, id)
+                buildDock()
+                Toast.makeText(this, "Slot ${index + 1} icon set to $label", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** Returns the icon and the intent to launch, or null if the slot is not usable. */
-    private fun resolve(component: String): Pair<Drawable, Intent>? {
+    private fun resolve(slot: Prefs.Slot): Pair<Drawable, Intent>? {
+        val component = slot.component
         val pkg = component.substringBefore('/')
         return try {
             if (component.contains('/')) {
@@ -369,11 +443,13 @@ class HomeActivity : Activity() {
                     .setComponent(cn)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 val themed = IconPacks.drawableFor(component)
+                    ?: HeadunitIcons.getCustomIcon(this, component, slot.iconId)
                 (themed ?: activityInfo.loadIcon(packageManager)) to intent
             } else {
                 val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return null
-                // A bare package still needs a component key to look up in the pack.
-                val themed = intent.component?.flattenToShortString()?.let { IconPacks.drawableFor(it) }
+                val themed = intent.component?.flattenToShortString()?.let {
+                    IconPacks.drawableFor(it) ?: HeadunitIcons.getCustomIcon(this, it, slot.iconId)
+                } ?: HeadunitIcons.getCustomIcon(this, pkg, slot.iconId)
                 (themed ?: packageManager.getApplicationIcon(pkg)) to intent
             }
         } catch (e: Throwable) {
@@ -598,7 +674,8 @@ class HomeActivity : Activity() {
 
             when {
                 slot.component == Prefs.DRAWER -> {
-                    icon.setImageResource(R.drawable.ic_all_apps)
+                    val custom = HeadunitIcons.getCustomIcon(this, Prefs.DRAWER, slot.iconId)
+                    icon.setImageDrawable(custom ?: getDrawable(R.drawable.ic_apple_all_apps))
                     label.text = slot.label
                     view.setOnClickListener {
                         startActivity(Intent(this, DrawerActivity::class.java))
@@ -609,7 +686,7 @@ class HomeActivity : Activity() {
                     view.isClickable = false
                 }
                 else -> {
-                    val resolved = resolve(slot.component)
+                    val resolved = resolve(slot)
                     if (resolved == null) {
                         view.alpha = 0.35f
                         view.isClickable = false

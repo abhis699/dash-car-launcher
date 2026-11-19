@@ -25,12 +25,6 @@
         android:scaleType="centerCrop"
         android:contentDescription="@null" />
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="466dp"
-        android:layout_gravity="top"
-        android:background="@drawable/scrim_hero" />
-
     <LinearLayout
         android:id="@+id/normal_root"
         android:layout_width="match_parent"
@@ -40,12 +34,14 @@
         <!-- ================= HERO ================= -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="466dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/scrim_hero"
             android:orientation="horizontal"
-            android:paddingStart="54dp"
-            android:paddingEnd="54dp"
-            android:paddingTop="46dp"
-            android:paddingBottom="42dp">
+            android:paddingStart="48dp"
+            android:paddingEnd="48dp"
+            android:paddingTop="32dp"
+            android:paddingBottom="20dp">
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -352,14 +348,13 @@
         <LinearLayout
             android:id="@+id/dock"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="@color/dock_bg"
-            android:paddingStart="32dp"
-            android:paddingEnd="32dp"
-            android:paddingTop="22dp"
-            android:paddingBottom="26dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="14dp"
             android:baselineAligned="false" />
     </LinearLayout>
 
@@ -370,6 +365,21 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:inflatedId="@+id/drive_root" />
+
+    <!-- Top-right corner settings shortcut -->
+    <ImageView
+        android:id="@+id/btn_settings"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="20dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/ctrl_bg"
+        android:src="@drawable/ic_settings"
+        android:padding="10dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="@null" />
 
     <!--
       Night dimming. A plain black view at low alpha over everything, which costs one
