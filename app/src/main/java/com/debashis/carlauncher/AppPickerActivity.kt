@@ -113,6 +113,7 @@ class AppPickerActivity : Activity() {
             setResult(
                 RESULT_OK,
                 Intent()
+                    .putExtra(EXTRA_SLOT, intent.getIntExtra(EXTRA_SLOT, -1))
                     .putExtra(EXTRA_COMPONENT, entry.component)
                     // Keep the app's own name unless it is one of our two synthetic entries.
                     .putExtra(EXTRA_LABEL, if (entry.component == Prefs.DRAWER) entry.label else "")
@@ -136,6 +137,18 @@ class AppPickerActivity : Activity() {
             icon.setImageDrawable(entry.icon)
             icon.alpha = if (entry.icon == null) 0f else 1f
             view.findViewById<TextView>(R.id.label).text = entry.label
+
+            view.setOnClickListener {
+                setResult(
+                    RESULT_OK,
+                    Intent()
+                        .putExtra(EXTRA_SLOT, intent.getIntExtra(EXTRA_SLOT, -1))
+                        .putExtra(EXTRA_COMPONENT, entry.component)
+                        .putExtra(EXTRA_LABEL, if (entry.component == Prefs.DRAWER) entry.label else "")
+                )
+                finish()
+            }
+
             return view
         }
     }

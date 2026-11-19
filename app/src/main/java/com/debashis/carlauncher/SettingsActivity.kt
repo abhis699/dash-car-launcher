@@ -131,6 +131,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun renderDock() {
+        content.addView(header("Setup"))
         val setupGroup = newGroup()
         val wizardRow = newRow(setupGroup)
         wizardRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_settings)
@@ -145,6 +146,8 @@ class SettingsActivity : Activity() {
         setupGroup.addView(wizardRow)
         content.addView(setupGroup)
 
+        content.addView(spacer())
+        content.addView(header("Dock Slots"))
         val group = newGroup()
         val slots = Prefs.dock(this)
 
@@ -790,13 +793,18 @@ class SettingsActivity : Activity() {
             REQ_PICK_APP -> {
                 val component = data?.getStringExtra(AppPickerActivity.EXTRA_COMPONENT) ?: return
                 val label = data.getStringExtra(AppPickerActivity.EXTRA_LABEL).orEmpty()
+                val returnSlot = data.getIntExtra(AppPickerActivity.EXTRA_SLOT, -1)
+                val targetSlot = if (returnSlot >= 0) returnSlot else editingSlot
+
                 when {
                     editingDriveSlot >= 0 -> {
                         Prefs.setDriveSlot(this, editingDriveSlot, Prefs.Slot(component, label))
                         editingDriveSlot = -1
                     }
-                    editingSlot >= 0 -> {
-                        Prefs.setSlot(this, editingSlot, Prefs.Slot(component, label))
+                    targetSlot >= 0 -> {
+                        val currentSlot = Prefs.dock(this).getOrNull(targetSlot)
+                        val iconId = currentSlot?.iconId.orEmpty()
+                        Prefs.setSlot(this, targetSlot, Prefs.Slot(component, label, iconId))
                         editingSlot = -1
                     }
                 }

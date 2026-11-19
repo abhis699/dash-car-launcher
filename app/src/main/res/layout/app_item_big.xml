@@ -4,9 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:gravity="center"
-    android:background="@drawable/app_icon_bg"
-    android:clickable="true"
-    android:focusable="true">
+    android:background="@drawable/app_icon_bg">
 
     <ImageView
         android:id="@+id/icon"

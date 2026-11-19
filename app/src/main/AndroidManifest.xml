@@ -51,7 +51,7 @@
 
         <activity
             android:name=".SetupActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:excludeFromRecents="true"
@@ -59,7 +59,7 @@
 
         <activity
             android:name=".IconPackPickerActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:excludeFromRecents="true"
@@ -67,7 +67,7 @@
 
         <activity
             android:name=".SettingsActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:excludeFromRecents="true"
@@ -75,7 +75,7 @@
 
         <activity
             android:name=".AppPickerActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:excludeFromRecents="true"
@@ -83,7 +83,7 @@
 
         <activity
             android:name=".DrawerActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="landscape"
             android:configChanges="orientation|keyboardHidden|screenSize|uiMode"
             android:excludeFromRecents="true"

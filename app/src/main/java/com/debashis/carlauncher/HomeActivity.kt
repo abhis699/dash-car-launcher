@@ -310,12 +310,18 @@ class HomeActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_PICK_SLOT && resultCode == RESULT_OK && editingSlot >= 0) {
-            val component = data?.getStringExtra(AppPickerActivity.EXTRA_COMPONENT) ?: return
-            val label = data.getStringExtra(AppPickerActivity.EXTRA_LABEL).orEmpty()
-            Prefs.setSlot(this, editingSlot, Prefs.Slot(component, label))
-            buildDock()
-            editingSlot = -1
+        if (requestCode == REQ_PICK_SLOT && resultCode == RESULT_OK) {
+            val returnSlot = data?.getIntExtra(AppPickerActivity.EXTRA_SLOT, -1) ?: -1
+            val targetSlot = if (returnSlot >= 0) returnSlot else editingSlot
+            if (targetSlot >= 0) {
+                val component = data?.getStringExtra(AppPickerActivity.EXTRA_COMPONENT) ?: return
+                val label = data.getStringExtra(AppPickerActivity.EXTRA_LABEL).orEmpty()
+                val currentSlot = Prefs.dock(this).getOrNull(targetSlot)
+                val iconId = currentSlot?.iconId.orEmpty()
+                Prefs.setSlot(this, targetSlot, Prefs.Slot(component, label, iconId))
+                buildDock()
+                editingSlot = -1
+            }
         }
     }
 
