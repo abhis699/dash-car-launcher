@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.format.DateFormat
 import android.view.LayoutInflater
 import android.view.View
@@ -693,6 +694,20 @@ class SettingsActivity : Activity() {
         if (customIcons.isNotEmpty()) customVal.setTextColor(getColor(R.color.accent))
         customIconRow.setOnClickListener { showCustomIconAppPicker() }
         group.addView(customIconRow)
+
+        // 4. Media playback access
+        val mediaAccessRow = newRow(group)
+        val hasMediaAccess = MediaManager.hasNotificationAccess(this)
+        mediaAccessRow.findViewById<ImageView>(R.id.row_icon).setImageResource(R.drawable.ic_apple_music)
+        mediaAccessRow.findViewById<TextView>(R.id.row_title).text = "Media playback access"
+        mediaAccessRow.findViewById<TextView>(R.id.row_sub).text = "Allow capturing music, radio, and playback controls"
+        val mediaVal = mediaAccessRow.findViewById<TextView>(R.id.row_value)
+        mediaVal.text = if (hasMediaAccess) "Allowed" else "Tap to grant"
+        if (hasMediaAccess) mediaVal.setTextColor(getColor(R.color.accent))
+        mediaAccessRow.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+        group.addView(mediaAccessRow)
 
         content.addView(group)
     }

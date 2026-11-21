@@ -1,13 +1,34 @@
 package com.debashis.carlauncher
 
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 
 /**
- * Exists solely to unlock MediaSessionManager.
+ * Bridges system notifications and media session tokens to MediaManager.
  *
- * Android will not hand out active media sessions to an arbitrary app. The only way in is
- * to declare a NotificationListenerService and have the user (or adb) grant notification
- * access, then pass this component to getActiveSessions(). We never read a single
- * notification: the service body is empty on purpose.
+ * Android 8.1+ requires a NotificationListenerService to access MediaSessionManager.
+ * In addition, this service captures MediaSession.Tokens and media playback notifications
+ * directly from apps (like browsers, video players, and headunit apps).
  */
-class DashNotificationListener : NotificationListenerService()
+class DashNotificationListener : NotificationListenerService() {
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        MediaManager.onNotificationListenerConnected(this)
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        MediaManager.onNotificationListenerDisconnected()
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        super.onNotificationPosted(sbn)
+        sbn?.let { MediaManager.onNotificationPosted(this, it) }
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        super.onNotificationRemoved(sbn)
+        sbn?.let { MediaManager.onNotificationRemoved(it) }
+    }
+}

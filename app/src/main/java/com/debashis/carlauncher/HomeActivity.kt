@@ -206,20 +206,9 @@ class HomeActivity : Activity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        npPlay.setOnClickListener {
-            val c = controller ?: return@setOnClickListener
-            if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
-                c.transportControls.pause()
-            } else {
-                c.transportControls.play()
-            }
-        }
-        npNext.setOnClickListener { controller?.transportControls?.skipToNext() }
-
-        findViewById<View>(R.id.now_playing).setOnClickListener {
-            val pkg = controller?.packageName ?: "com.imotor.music"
-            packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
-        }
+        npPlay.setOnClickListener { MediaManager.playPause() }
+        npNext.setOnClickListener { MediaManager.skipNext() }
+        findViewById<View>(R.id.now_playing).setOnClickListener { openPlayingApp() }
 
         loadWallpaper()
         buildDock()
@@ -540,9 +529,8 @@ class HomeActivity : Activity() {
      */
     private fun renderTrip() {
         val card = findViewById<View>(R.id.trip_card) ?: return
-        val mediaShowing = controller != null &&
-                (controller?.playbackState?.state == PlaybackState.STATE_PLAYING ||
-                        controller?.playbackState?.state == PlaybackState.STATE_BUFFERING)
+        val mediaState = MediaManager.getCurrentState()
+        val mediaShowing = mediaState.hasActiveSession && (mediaState.isPlaying || mediaState.title != null)
 
         val strip = findViewById<TextView>(R.id.trip_strip)
         val haveTrip = Trip.cardEnabled(this) && Trip.hasTrip() && !inDriveMode
@@ -642,7 +630,7 @@ class HomeActivity : Activity() {
             root.findViewById(R.id.drive_np_next)
         )
         driveCard?.play?.setOnClickListener { togglePlayPause() }
-        driveCard?.next?.setOnClickListener { controller?.transportControls?.skipToNext() }
+        driveCard?.next?.setOnClickListener { MediaManager.skipNext() }
         driveCard?.root?.setOnClickListener { openPlayingApp() }
         driveClock?.setOnLongClickListener { setScreenOff(true); true }
     }
@@ -789,94 +777,45 @@ class HomeActivity : Activity() {
     }
 
     private fun togglePlayPause() {
-        val c = controller ?: return
-        if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.transportControls.pause()
-        else c.transportControls.play()
+        MediaManager.playPause()
     }
 
     private fun openPlayingApp() {
-        val pkg = controller?.packageName ?: "com.imotor.music"
-        packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
+        if (!MediaManager.hasNotificationAccess(this)) {
+            showMediaPermissionDialog()
+        } else {
+            MediaManager.launchMediaApp(this)
+        }
+    }
+
+    private fun showMediaPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Media Playback Access")
+            .setMessage("Allow notification access so Dash Car Launcher can capture music and media playback from Spotify, YouTube, and other apps.")
+            .setPositiveButton("Open Settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun unitLabel() = if (Prefs.units(this) == Prefs.UNITS_MPH) "mph" else getString(R.string.kmh)
 
     // ------------------------------------------------------------ media
 
-    private var sessionManager: MediaSessionManager? = null
-    private var controller: MediaController? = null
-
-    private val sessionsListener =
-        MediaSessionManager.OnActiveSessionsChangedListener { list -> bindController(list) }
-
-    private val controllerCallback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = renderMedia()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = renderMedia()
-        override fun onSessionDestroyed() {
-            controller = null
-            renderMedia()
+    private val mediaListener = object : MediaManager.Listener {
+        override fun onMediaChanged(state: MediaManager.MediaState) {
+            renderMedia(state)
         }
-    }
-
-    /**
-     * Android will not hand out media sessions without notification access. Granted either
-     * in Settings, or over adb with:
-     *   cmd notification allow_listener com.debashis.carlauncher/.DashNotificationListener
-     */
-    private fun notificationAccessGranted(): Boolean {
-        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-        return flat != null && flat.contains(packageName)
-    }
-
-    private fun setupMedia() {
-        if (!notificationAccessGranted()) return
-        val component = ComponentName(this, DashNotificationListener::class.java)
-        sessionManager = try {
-            getSystemService(MediaSessionManager::class.java)
-        } catch (t: Throwable) {
-            null
-        }
-        try {
-            sessionManager?.addOnActiveSessionsChangedListener(sessionsListener, component)
-            bindController(sessionManager?.getActiveSessions(component))
-        } catch (e: Throwable) {
-            // Access revoked between the check and the call or media session unavailable.
-        }
-    }
-
-    private fun teardownMedia() {
-        controller?.unregisterCallback(controllerCallback)
-        controller = null
-        try {
-            sessionManager?.removeOnActiveSessionsChangedListener(sessionsListener)
-        } catch (e: Exception) {
-            // Nothing to unwind.
-        }
-    }
-
-    /** Prefer whatever is actually playing over whatever merely exists. */
-    private fun bindController(list: List<MediaController>?) {
-        controller?.unregisterCallback(controllerCallback)
-        controller = list?.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
-            ?: list?.firstOrNull()
-        controller?.registerCallback(controllerCallback)
-        renderMedia()
     }
 
     /** Every inflated card, so switching layouts never shows stale media. */
     private fun cards() = listOfNotNull(normalCard, driveCard)
 
-    private fun renderMedia() {
-        val c = controller
-        val metadata = c?.metadata
-        val state = c?.playbackState?.state
-        val active = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
-        val title = usable(metadata?.getString(MediaMetadata.METADATA_KEY_TITLE))
+    private fun renderMedia(state: MediaManager.MediaState = MediaManager.getCurrentState()) {
+        val hasMedia = state.hasActiveSession && (state.title != null || state.isPlaying)
 
-        // A session is worth showing when it is ACTIVELY PLAYING, even with no metadata.
-        // FM radio (com.imotor.fmam) publishes a live session with `metadata: null` and
-        // state=3, so requiring a title made a playing radio read as "Nothing playing".
-        if (c == null || (!active && title == null)) {
+        if (!hasMedia) {
             for (card in cards()) {
                 card.play.visibility = View.GONE
                 card.next.visibility = View.GONE
@@ -887,28 +826,18 @@ class HomeActivity : Activity() {
             return
         }
 
-        // No title means a source with nothing to name, like a radio band. The app is the
-        // most useful label we have.
-        val shownTitle = title ?: appLabel(c.packageName)
-        val shownSub = usable(metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST))
-            ?: usable(metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST))
-            ?: usable(metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM))
-            ?: if (title != null) appLabel(c.packageName) else "Playing"
+        val shownTitle = state.title ?: getString(R.string.nothing_playing)
+        val shownSub = state.artist
+            ?: state.album
+            ?: if (state.packageName != null) appLabel(state.packageName) else "Playing"
 
-        val art = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-
-        val playing = state == PlaybackState.STATE_PLAYING
-        // Only offer skip when the session says it supports it. Radio uses it to change
-        // station; a source that cannot skip should not show a dead button.
-        val canSkip = (c.playbackState?.actions ?: 0L) and PlaybackState.ACTION_SKIP_TO_NEXT != 0L
+        val playing = state.isPlaying
+        val canSkip = state.canSkip
 
         for (card in cards()) {
             card.title.text = shownTitle
             card.sub.text = shownSub
-            // Null leaves the gradient background showing, which is a better empty state
-            // than a grey box.
-            card.art.setImageBitmap(art)
+            card.art.setImageBitmap(state.art)
             card.play.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
             card.play.visibility = View.VISIBLE
             card.next.visibility = if (canSkip) View.VISIBLE else View.GONE
@@ -952,9 +881,10 @@ class HomeActivity : Activity() {
         }
 
         // Only owns the card when no media session is active.
-        if (controller != null) return
+        if (MediaManager.getCurrentState().hasActiveSession) return
         val title = if (connected) "Bluetooth audio" else getString(R.string.nothing_playing)
         val sub = if (connected) getString(R.string.bt_connected_sub)
+        else if (!MediaManager.hasNotificationAccess(this)) "Tap to allow media access"
         else getString(R.string.nothing_playing_sub)
         for (card in cards()) {
             card.title.text = title
@@ -1036,8 +966,10 @@ class HomeActivity : Activity() {
         })
         updateClock()
         updateBluetooth()
+        renderMedia()
         startLocation()
-        setupMedia()
+        MediaManager.init(this)
+        MediaManager.addListener(mediaListener)
         handler.post(staleCheck)
         restartIdleTimer()
     }
@@ -1047,7 +979,7 @@ class HomeActivity : Activity() {
         unregisterReceiver(timeReceiver)
         unregisterReceiver(btReceiver)
         stopLocation()
-        teardownMedia()
+        MediaManager.removeListener(mediaListener)
         Trip.save(this)
         handler.removeCallbacks(staleCheck)
         handler.removeCallbacks(idleTimeout)
@@ -1068,6 +1000,7 @@ class HomeActivity : Activity() {
         applyDim()
         updateClock()
         updateBluetooth()
+        renderMedia()
     }
 
     /** Home is the bottom of the stack. Back must not leave the user on a blank screen. */
