@@ -67,6 +67,13 @@ class HomeActivity : Activity() {
         /** Below this, a GPS reading is standstill jitter rather than movement. 3 km/h. */
         const val DEADBAND_MS = 0.833f
         const val TICK_MS = 1000L
+
+        /**
+         * Exponential Moving Average (EMA) smoothing factor for GPS speed readings:
+         * v_smooth = alpha * v_new + (1 - alpha) * v_prev
+         * Filters out +/- 1 to 3 km/h satellite clock jitter while keeping latency unnoticeable.
+         */
+        const val SPEED_EMA_ALPHA = 0.35f
     }
 
     private lateinit var clockView: TextView
@@ -105,6 +112,8 @@ class HomeActivity : Activity() {
     private var inDriveMode = false
     private var idleDimmed = false
     private var lastKmh = 0f
+    private var smoothedMs = 0f
+    private var lastLocation: Location? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var lastFixAt = 0L
@@ -122,15 +131,40 @@ class HomeActivity : Activity() {
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
             lastFixAt = SystemClock.elapsedRealtime()
-            // getSpeed() is metres per second. Never negative, but clamp anyway.
-            val ms = loc.speed.coerceAtLeast(0f)
+
+            // 1. Determine raw speed in m/s: use loc.speed if present, or compute from delta distance
+            val rawMs = if (loc.hasSpeed() && loc.speed > 0f) {
+                loc.speed
+            } else {
+                val prev = lastLocation
+                if (prev != null && loc.hasAccuracy() && loc.accuracy < 25f && prev.hasAccuracy() && prev.accuracy < 25f) {
+                    val dt = (loc.time - prev.time) / 1000.0f
+                    if (dt in 0.5f..5.0f) {
+                        prev.distanceTo(loc) / dt
+                    } else 0f
+                } else 0f
+            }.coerceAtLeast(0f)
+            lastLocation = loc
+
+            // 2. Exponential Moving Average (EMA) filter: v_smooth = alpha * v_new + (1 - alpha) * v_prev
+            smoothedMs = when {
+                rawMs < DEADBAND_MS -> {
+                    // Quick snap to zero when coming to a standstill so ghost speeds don't linger at red lights
+                    if (smoothedMs < DEADBAND_MS * 1.5f) 0f
+                    else (SPEED_EMA_ALPHA * 0f + (1f - SPEED_EMA_ALPHA) * smoothedMs)
+                }
+                smoothedMs == 0f -> rawMs // Immediate response when taking off from a stop
+                else -> SPEED_EMA_ALPHA * rawMs + (1f - SPEED_EMA_ALPHA) * smoothedMs
+            }
+
             // GPS jitters at a standstill, so a parked car reads 1 or 2. The deadband is held
             // in m/s so it means the same thing in either unit.
-            val display = if (ms < DEADBAND_MS) 0f else ms * unitFactor()
+            val displayMs = if (smoothedMs < DEADBAND_MS) 0f else smoothedMs
+            val display = displayMs * unitFactor()
             speedView.text = display.roundToInt().toString()
             driveSpeed?.text = display.roundToInt().toString()
 
-            lastKmh = if (ms < DEADBAND_MS) 0f else ms * 3.6f
+            lastKmh = displayMs * 3.6f
             Trip.onLocation(this@HomeActivity, loc)
             renderTrip()
             updateDriveMode()
@@ -159,6 +193,8 @@ class HomeActivity : Activity() {
         override fun run() {
             if (lastFixAt != 0L && SystemClock.elapsedRealtime() - lastFixAt > SPEED_STALE_MS) {
                 speedView.text = getString(R.string.no_speed)
+                smoothedMs = 0f
+                lastKmh = 0f
             }
             updateGpsLabel()
             handler.postDelayed(this, TICK_MS)
@@ -938,6 +974,8 @@ class HomeActivity : Activity() {
     }
 
     private fun stopLocation() {
+        smoothedMs = 0f
+        lastLocation = null
         val lm = locationManager ?: return
         try {
             lm.removeUpdates(locationListener)
