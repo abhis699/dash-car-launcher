@@ -1,356 +1,118 @@
 # Dash
 
-A minimal, fast home screen for cheap Android car head units.
+A minimal, ultra-fast home screen for Android automotive head units and car tablets.
 
-Built in one evening for a myTVS unit in a Hyundai Grand i10, because the launcher that ships
-on these things is slow and cluttered, and the third-party replacements are heavier than the
-hardware can carry.
+Built on pure Android framework APIs with **zero third-party dependencies**. It replaces bloated, sluggish vendor interfaces with a clean Apple-inspired squircle design, responsive GPS speedometer, universal media capture, and automatic hardware detection.
 
-![Dash home screen](screenshots/05-apple-redesign-home.png)
+![Dash Home Screen](screenshots/01-home.png)
 
 ---
 
-## What it is
+## Highlights
 
-A launcher with eight apps, a clock, a GPS speed readout, a now-playing card and trip stats.
-No widgets, no wallpaper engine, no animations, no analytics, no accounts.
-
-| | |
+| Feature | Description |
 |---|---|
-| **Dock** | Eight slots, every one configurable to any installed app, with custom labels. A slot whose package is missing dims instead of crashing. |
-| **App drawer** | Pages sideways, ten large icons per page. Icons are decoded per page and dropped elsewhere. |
-| **Drive mode** | Above 30 km/h the screen simplifies to four large targets with speed dominant. Returns below 18. Two thresholds so traffic does not flicker it. |
-| **Now playing** | Live from `MediaSessionManager`, including sources that publish no metadata at all, like FM radio. Play, pause, skip. |
-| **Trip stats** | Distance, average over moving time, top speed, duration. A trip is a journey: it survives stops and ends after 3 hours parked. |
-| **Dimming** | Dims at night by the clock, and after a few minutes of no touch. One overlay at the deeper of the two. |
-| **Screen off** | Long press the clock. Tap to wake. |
-| **Settings** | Dock editor, wallpaper picker, drive thresholds, dimming, clock format, km/h or mph. |
+| **Apple-Style Squircles** | 31+ clean vector squircle icons (Phosphor & SimpleIcons) with continuous squircle masks, plus dynamic Apple dark-plate (`#1C1C1E`) wrapping for any third-party app. |
+| **Hardware Detection** | Automated Setup Wizard detects firmware family (MediaTek K80, Topway TS10/TS18, FYT/Teyes, Allwinner, Rockchip, MTK AC8227L) and pre-populates working apps. |
+| **GPS Speedometer** | Real-time speedometer with Exponential Moving Average (EMA) smoothing ($\alpha = 0.35$), standstill deadband snap, and displacement fallback for GPS chips without Doppler velocity. |
+| **Universal Media Card** | Captures playback, track titles, album art, and controls from `MediaSessionManager`, media notifications, and Bluetooth A2DP. |
+| **Journey Trip Computer** | Tracks distance, moving average speed, max speed, and duration. Survives ignition power cycles and ends only after 3 hours parked. |
+| **Drive Mode** | Simplifies to large touch targets above 30 km/h with dominant speed display; automatically returns below 18 km/h. |
+| **Custom Dock & Icon Picker** | Long-press any slot to assign any installed app or pick dedicated Apple vector icons. |
+| **Ambient & Idle Dimming** | Automatic night dimming by clock and idle screen dimming after inactivity. Long-press clock for instant screen off. |
 
-**Zero third-party dependencies.** No AppCompat, no Material Components, no Jetpack Compose,
-no image loader. Everything is framework API on `android.app.Activity`. On a device with
-1.9 GB of RAM and four Cortex-A35 cores, every dependency is paid for at every boot, for a
-screen with eight buttons on it.
+---
 
-| | |
+## Specifications
+
+| Metric | Value |
 |---|---|
-| APK size | **2.3 MB** (debug, unminified) |
-| Third-party dependencies | **0** |
-| Resident memory | ~77 MB including the wallpaper bitmap and media session |
-| Target | Android 8.1+ (API 27+), target Android 11 (API 30), landscape, 1280x720 |
-| Language | Kotlin |
-| Incremental build | ~8 seconds |
+| **APK Size** | **~1.3 MB** (unminified debug) |
+| **Third-Party Dependencies** | **0** (No Compose, No Material, No AppCompat) |
+| **Resident Memory** | **~75 MB** |
+| **OS Compatibility** | **Android 8.1+ (API 27+)** through Android 14+ (targetSdk 30) |
+| **Display Support** | Landscape 1024x600, 1280x720, 1280x800, and widescreen head units |
+| **Language** | Kotlin / Clean Android SDK Architecture |
 
 ---
 
 ## Screens
 
-| Home | All apps |
+| Home Screen | App Drawer |
 |---|---|
-| ![Home](screenshots/05-apple-redesign-home.png) | ![Drawer](screenshots/06-apple-redesign-drawer.png) |
+| ![Home](screenshots/01-home.png) | ![Drawer](screenshots/02-drawer.png) |
 
-| Now playing, live from the media session | Radio, which publishes no metadata at all |
+| Setup Wizard (Hardware Detection) | Dock & Custom Icons |
 |---|---|
-| ![Media](screenshots/08-real-now-playing-media-session.png) | ![Radio](screenshots/09-radio-now-playing-and-speed-deadband.png) |
-
-The `design/` folder holds the HTML mockups the design was chosen from, including three
-rejected directions and the Apple-influenced treatment that became the final look.
+| ![Setup Wizard](screenshots/06-setup-wizard.png) | ![Settings Dock](screenshots/04-settings-dock.png) |
 
 ---
 
-## Will it work on your head unit?
+## Supported Head Unit Platforms
 
-**Read this before downloading.** Compatibility is not all-or-nothing: the shell works
-anywhere, the dock is tuned for one firmware family.
+Dash detects and pre-configures working apps out of the box for major Android automotive families:
 
-| Feature | Works on | Notes |
-|---|---|---|
-| Clock, date, app drawer | **Any Android 8.1+ unit** | Nothing vendor specific. |
-| GPS speed | Any unit with a GPS receiver | Uses `Location.getSpeed()`, no CAN bus needed. |
-| Now playing | Any app publishing a `MediaSession` | Needs notification access granted once. |
-| Wallpaper | Any unit | Reads a file, no storage permission required. |
-| **Dock tiles** | **`com.imotor.*` units only** | This is the catch. See below. |
-
-The dock targets specific packages: `com.imotor.phoneconnect` (CarPlay and Android Auto),
-`com.imotor.music`, `com.imotor.fmam` (FM radio), `com.imotor.contacts`. That is the "imotor"
-firmware family, which myTVS and a number of other rebadged Chinese units are built on.
-
-**On a unit from a different vendor those tiles appear dimmed and do nothing.** They will not
-crash: every slot is resolved at runtime and falls back to inert. Netflix, YouTube and All apps
-still work, and the drawer still shows everything installed.
-
-**Fixing it needs no rebuild.** Long press the dock to open Settings, then Dock, then tap any
-slot and choose one of your own apps. Note that the picker selects at *component* level, not
-package level, which matters on firmware where one package exposes several launcher activities.
-
-If you would rather see the raw list first:
-
-```bash
-adb shell cmd package query-activities --brief \
-  -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
-```
-
-Built and tested on: Rockchip **RK3326**, 4x Cortex-A35 @ 1.5 GHz, Mali-G31, 1.9 GB RAM,
-Android 11, 1280x720 at density 160.
+- **MediaTek K80 BSP (`alps k80_bsp` / `full_k80_bsp` / `MT6580`)**: Budget car tablets & head units with MediaTek radio and ZLink.
+- **Topway (TS10 / TS18 / TS7)**: UIS7862 platforms (`com.ts.main`, `com.ts.radio`, `com.ts.music`).
+- **FYT / UIS7862 / Teyes (CC2 / CC3 / Spro / Joying / Mekede)**: SYU ecosystem (`com.syu.ms`, `com.syu.radio`, `com.syu.music`, `com.syu.canbus`).
+- **Allwinner (T3 / T507 / T8)**: Auto chips (`com.aw.radio`, `com.aw.music`).
+- **Rockchip (PX5 / PX6 / RK3399 / RK3326 / HCT)**: Dasaita, Eonon, Xtrons (`com.hct.radio`, `com.microntek.music`).
+- **MTK AC8227L / AC8257**: AutoChips platforms (`com.autochips.radio`, `com.autochips.music`).
+- **Generic Android 8.1+**: Automatic heuristic discovery for any Android device.
 
 ---
 
-## Install
+## Installation
 
-Builds from v1.1 onward are release-signed. The v1.0 APK on the releases page was debug-signed,
-so upgrading from it requires an uninstall first. That is a one-time break; every version after
-this installs cleanly over the last.
+### 1. Enable Developer Options on Head Unit
+Go to **Settings → About → tap Build Number 7 times**.
+If prompted for a password, common manufacturer codes are:
+- `8888`, `3368`, `1234`, `0000`, `1617`
+- On Rockchip/Android 11 units, try the current date followed by three capital `O`s: e.g. `20261121OOO`.
 
-### 1. Get into Developer options
-
-Most of these head units gate Developer options behind a password.
-
-```
-Settings -> About -> tap Build number 7 times
-```
-
-If it asks for a password, common values on RK-based units are `8888`, `3368`, `1234`, `0000`.
-On **RK3326 / Android 11** specifically, the one that usually works is the **current date
-followed by three capital letter O**, no dots:
-
-```
-20260914OOO
-```
-
-It is the letter O, not zero, and it changes every day. Use the date the unit itself displays.
-Factory mode is a separate gate with its own password; on many units the default is `8888`.
-
-### 2. Connect over ADB
+### 2. Connect via ADB
+Connect via USB debugging or over Wi-Fi (Phone hotspot works well):
 
 ```bash
-# Unit and computer on the same network. A phone hotspot works fine.
-# On the unit: Developer options -> Wireless debugging -> ON
-
-adb mdns services          # retry a few times, the list flaps
-# -> adb-XXXX  _adb-tls-pairing._tcp  192.168.1.50:37123
-# -> adb-XXXX  _adb-tls-connect._tcp  192.168.1.50:44563
-
-adb pair 192.168.1.50:37123 123456     # 6-digit code from "Pair device with pairing code"
-adb connect 192.168.1.50:44563
+# Pair device (if wireless debugging is used)
+adb pair <ip>:<pairing-port> <pairing-code>
+adb connect <ip>:<connect-port>
 ```
 
-The pairing survives reboots. Only the connect port changes, which is why `adb mdns services`
-beats memorising a number.
-
-### 3. Install
-
+### 3. Install APK
 ```bash
-adb install -r dash-v1.2.apk
+adb install -r app-debug.apk
 ```
 
-### 4. Grant what it needs
-
+### 4. Grant Permissions
 ```bash
-# GPS speed readout
+# GPS Speedometer
 adb shell pm grant com.debashis.carlauncher android.permission.ACCESS_FINE_LOCATION
 
-# Now playing. Android will not hand out media sessions without this.
+# Media Session Access (captures title, artist, art, and controls)
 adb shell cmd notification allow_listener \
   com.debashis.carlauncher/com.debashis.carlauncher.DashNotificationListener
 ```
 
-Both can also be done on the unit: Settings -> Apps -> Dash -> Permissions, and
-Settings -> Notification access.
-
-### 5. Set it as home
-
-Press Home and pick Dash, or Settings -> Apps -> Default apps -> Home app.
-
-> **Choose "Just once" for the first few days, not "Always".**
-> If a Home app crashes on startup and it is your default, a car with no physical buttons has
-> nothing to fall back to. Keep your old launcher installed and enabled. Once Dash is the
-> default, the old launcher unloads itself from memory anyway, so disabling it frees nothing
-> and only removes your safety net.
-
-### 6. Wallpaper (optional)
-
-```bash
-adb push your-photo.jpg \
-  /sdcard/Android/data/com.debashis.carlauncher/files/wallpaper.jpg
-```
-
-That path needs no storage permission. Replace the file and return to the home screen; it
-re-reads on resume. With no file present you get a dark colour wash.
-
-### Uninstall
-
-```bash
-adb uninstall com.debashis.carlauncher
-```
-
-Android hands Home back to whatever launcher remains. Dash stores nothing.
+### 5. Set as Default Launcher
+Press the **Home** button on your head unit and select **Dash**, or configure in **Settings → Apps → Default Apps → Home App**.
 
 ---
 
-## Build from source
+## Build from Source
 
 ```bash
-export JAVA_HOME=/path/to/jdk17
-export ANDROID_HOME=/path/to/android-sdk
+git clone https://github.com/abhis699/dash-car-launcher.git
+cd dash-car-launcher
 ./gradlew assembleDebug
 ```
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`.
+Built APK will be located at: `app/build/outputs/apk/debug/app-debug.apk`.
 
-JDK 17, Android SDK 34, Gradle 8.7 via the included wrapper. AGP 8.5.2 does not run on
-Gradle 9, so use the wrapper rather than a system Gradle.
-
----
-
-## Design decisions, and why
-
-**Apple-influenced, not Apple.** Vivid squircle icons, translucent material fills instead of
-borders, tight negative tracking, true black. SF Pro and SF Symbols are **not** used: they are
-licensed for Apple-platform development and cannot ship inside an Android APK.
-
-**The live blur is faked.** Apple's material look depends on real background blur. On an
-RK3326, `RenderEffect` behind an always-visible dock is the most expensive thing you could put
-on the screen, redrawn every frame. Flat translucency at the same opacity reads the same at
-arm's length in a car and costs nothing.
-
-**The app icon is the tile.** No container behind it. These head-unit icons are already
-squircles; a container would be a squircle inside a squircle.
-
-**Amber, on the speed only.** Instrument-panel amber preserves night vision far better than
-white or blue. There is no tinted "primary" tile: position in the dock is the emphasis.
-
-**The scrim is shaped to the layout, not to the photo.** A photo behind white text is how this
-design normally fails: it looks fine with one image, then you change the wallpaper and the
-clock becomes unreadable. `drawable/scrim_hero.xml` is heaviest where the clock and speed sit,
-lightest across the middle band where nothing is drawn.
-
-**Text sizes in dp, not sp.** A car launcher must not reflow because someone changed the
-system font scale.
-
-**Speed comes from GPS,** because a base-trim car has no CAN bus to ask. If no fix arrives for
-5 seconds the readout drops to a dash, because a frozen speed reads as real while being wrong.
-Anything under 3 km/h is treated as zero, since GPS jitters at a standstill.
-
-**A trip is a journey, not an ignition cycle.** Bhubaneswar to Bargarh is a day's drive with
-stops for tea, lunch and fuel, and the unit powers down at every one of them. Ending the trip
-on each stop would report the last leg instead of the drive. So a trip survives stops and ends
-only after 3 hours parked: longer than any meal, shorter than a night. Nothing needs to be
-running for it to end; it ends by not being resumed.
-
-**Average speed is over moving time, not elapsed.** That 331 km drive takes 10 hours with 3
-hours of stops. Against elapsed it averages 33 km/h, which is the speed you drove including
-lunch. Against moving time it reads about 47, which is the speed you drove.
-
-**Night dimming is a clock comparison, not a sun calculation.** An earlier version computed
-sunrise and sunset from the GPS fix. It was deleted: it added a file, needed a location before
-it could decide anything, and gave a worse answer than "is it evening yet".
-
-**Idle dimming needs no "do not dim during navigation" rule.** A map or a video is a different
-app in the foreground, so the home activity is stopped and the timer is not running. The case
-handles itself.
-
-**The clock follows the unit's own 12 vs 24 hour setting** rather than hardcoding either.
-
-**Missing packages dim, they never crash.** Every dock slot is resolved at runtime.
-
-**System bars hidden, but recoverable.** `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` means a swipe
-from the edge brings the vendor's back and recents buttons back temporarily.
+Requires **JDK 17** and **Android SDK 34**.
 
 ---
 
-## Seven bugs, and what actually caused them
+## License
 
-Every one of these compiled cleanly and looked correct in a mockup. None would have been found
-without running it on the real panel.
-
-### 1. A short swipe did nothing in the app drawer
-Only an edge-to-edge drag changed page; a quick flick sprang back. Two causes compounding. The
-fling threshold was 900 px/s, well above the platform minimum, so quick gestures never took the
-fling path at all. The fallback then snapped to the *nearest* page, and a short gesture never
-moves `scrollX` past 50 percent, so nearest was always the page you started on.
-
-**The trap:** AOSP `HorizontalScrollView` calls `fling(-initialVelocity)`. It **negates** before
-handing the value over, so a right-to-left swipe arrives **positive**. The first fix read the
-sign backwards, computed page `-1`, and clamped it to `0`. Still nothing.
-
-Found by adding one `Log.d` and reading logcat: `fling v=1333` then `goTo page=-1` said it in a
-single line. Guessing twice cost more than instrumenting once.
-
-### 2. The old vendor wallpaper flashed on every launch
-`android:windowShowWallpaper="true"` with a transparent `windowBackground` means that in the
-moment before your content draws, the **system** wallpaper shows through. Letting the system
-composite the wallpaper is cheaper on paper and wrong in practice. Draw your own, and make the
-window background opaque so the first frame is already yours.
-
-### 3. "Nothing playing" while music was playing
-v1 reflected Bluetooth A2DP connection state, not playback. Local audio is not Bluetooth, so it
-could never report anything. Replaced with `MediaSessionManager`, which requires declaring a
-`NotificationListenerService` and being granted notification access. The service body is empty:
-it exists only as the key Android accepts.
-
-### 4. "Nothing playing" while the FM radio was playing
-`com.imotor.fmam` publishes a live session with **`metadata: null`** and `state=3`. The code
-required a non-blank title before believing anything was playing, so a source with nothing to
-name read as idle. A session now counts as active when it is PLAYING or BUFFERING regardless of
-metadata, and the app label is used when there is no title. Skip is shown only when the session
-advertises `ACTION_SKIP_TO_NEXT`.
-
-### 5. Speed read 1 km/h while parked
-GPS jitters at a standstill. Deadband at 3 km/h.
-
-### 6. The Phone tile was dead
-`com.imotor.dialer` exists but has **no launchable activity** on this unit. The phone UI is
-`com.imotor.contacts`. The missing-package guard dimmed it correctly rather than crashing,
-which is how the bug got noticed instead of causing one.
-
-### 7. CarPlay showed the generic Android robot
-`com.imotor.phoneconnect` exposes **four** launcher activities: `.Carplay`, `.AndroidAuto`,
-`.AndroidLink`, `.Airplay`. Launching the package default picked the wrong one and the generic
-app icon. Targeting the component directly fixed both, and made swapping a tile to Android Auto
-a one-line change afterwards.
-
----
-
-## If your unit feels slow, it is probably not the launcher
-
-Measured on the RK3326, and worth knowing before blaming any software:
-
-```
-OMX.rk.video_decoder.avc     H.264 hardware   YES
-OMX.rk.video_decoder.hevc    H.265 hardware   YES
-OMX.rk.video_decoder.vp8     VP8   hardware   YES
-                             VP9   hardware   NO
-```
-
-**There is no VP9 hardware decoder, and YouTube streams VP9 by default.** Every YouTube video
-above roughly 480p is decoded in software on four 1.5 GHz A35 cores. No launcher, no debloating
-and no amount of freed RAM changes that. Capping quality at 480p often drops it back to H.264
-and hardware decode.
-
-Freeing memory helps everything else. On the test unit, disabling Google TTS returned 37.7 MB,
-and swapping Gboard (88 MB resident) for a minimal keyboard (22 MB) returned another 66 MB.
-Note that a 647 KB keyboard APK still costs ~22 MB resident once the Android input framework
-loads around it: **APK size is not RAM.**
-
----
-
-## Roadmap
-
-Done: settings, lazy drawer icons, release signing, drive mode, dimming, screen off, trip
-stats, CI releases.
-
-Still open:
-
-- **Vendor profiles.** Detect the firmware family on first run and populate the dock, so a unit
-  that is not imotor does not start with four dead tiles.
-- **Icon pack support** (Nova / ADW format).
-- The vendor's floating assist button overlaps the speed digit in the top right. That is the
-  unit's own overlay, not this app's, and can usually be dragged elsewhere.
-
----
-
-## Licence
-
-MIT. Do what you like with it.
-
-A personal project for one car. Not affiliated with myTVS, Rockchip, Apple, Google, or any
-head-unit manufacturer.
+MIT License. Free for personal and automotive use.
