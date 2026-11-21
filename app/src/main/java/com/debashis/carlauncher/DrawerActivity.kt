@@ -210,9 +210,9 @@ class DrawerActivity : Activity() {
                         val entry = entries.getOrNull(offset + i) ?: continue
                         val component =
                             "${entry.info.activityInfo.packageName}/${entry.info.activityInfo.name}"
-                        val themed = IconPacks.drawableFor(component)
-                            ?: HeadunitIcons.getCustomIcon(this@DrawerActivity, component)
-                        view.setImageDrawable(themed ?: entry.info.loadIcon(packageManager))
+                        val icon = IconPacks.drawableFor(component)
+                            ?: HeadunitIcons.resolveIcon(this@DrawerActivity, component, "", entry.info.loadIcon(packageManager))
+                        view.setImageDrawable(icon)
                     }
                 } else if (view.drawable != null) {
                     view.setImageDrawable(null)

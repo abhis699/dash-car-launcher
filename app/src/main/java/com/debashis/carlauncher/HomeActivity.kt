@@ -437,15 +437,15 @@ class HomeActivity : Activity() {
                     .addCategory(Intent.CATEGORY_LAUNCHER)
                     .setComponent(cn)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val themed = IconPacks.drawableFor(component)
-                    ?: HeadunitIcons.getCustomIcon(this, component, slot.iconId)
-                (themed ?: activityInfo.loadIcon(packageManager)) to intent
+                val icon = IconPacks.drawableFor(component)
+                    ?: HeadunitIcons.resolveIcon(this, component, slot.iconId, activityInfo.loadIcon(packageManager))
+                icon to intent
             } else {
                 val intent = packageManager.getLaunchIntentForPackage(pkg) ?: return null
-                val themed = intent.component?.flattenToShortString()?.let {
-                    IconPacks.drawableFor(it) ?: HeadunitIcons.getCustomIcon(this, it, slot.iconId)
-                } ?: HeadunitIcons.getCustomIcon(this, pkg, slot.iconId)
-                (themed ?: packageManager.getApplicationIcon(pkg)) to intent
+                val icon = intent.component?.flattenToShortString()?.let {
+                    IconPacks.drawableFor(it) ?: HeadunitIcons.resolveIcon(this, it, slot.iconId, packageManager.getApplicationIcon(pkg))
+                } ?: HeadunitIcons.resolveIcon(this, pkg, slot.iconId, packageManager.getApplicationIcon(pkg))
+                icon to intent
             }
         } catch (e: Throwable) {
             null

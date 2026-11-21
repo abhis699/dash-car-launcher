@@ -581,13 +581,10 @@ class SettingsActivity : Activity() {
     private fun resolve(slot: Prefs.Slot): Drawable? {
         if (slot.component.isEmpty()) return null
         if (slot.component == Prefs.DRAWER) {
-            val custom = HeadunitIcons.getCustomIcon(this, Prefs.DRAWER, slot.iconId)
-            return custom ?: getDrawable(R.drawable.ic_apple_all_apps)
+            return HeadunitIcons.resolveIcon(this, Prefs.DRAWER, slot.iconId)
         }
-        val custom = HeadunitIcons.getCustomIcon(this, slot.component, slot.iconId)
-        if (custom != null) return custom
         return try {
-            if (slot.component.contains('/')) {
+            val raw = if (slot.component.contains('/')) {
                 val pkg = slot.component.substringBefore('/')
                 val cls = slot.component.substringAfter('/')
                 val info = packageManager.getActivityInfo(android.content.ComponentName(pkg, cls), 0)
@@ -596,6 +593,8 @@ class SettingsActivity : Activity() {
                 if (packageManager.getLaunchIntentForPackage(slot.component) == null) null
                 else packageManager.getApplicationIcon(slot.component)
             }
+            if (raw != null) HeadunitIcons.resolveIcon(this, slot.component, slot.iconId, raw)
+            else null
         } catch (e: Throwable) {
             null
         }

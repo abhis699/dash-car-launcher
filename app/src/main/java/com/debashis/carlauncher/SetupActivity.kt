@@ -256,20 +256,7 @@ class SetupActivity : Activity() {
 
     private fun resolveIcon(component: String?): Drawable? {
         if (component.isNullOrEmpty()) return null
-        val custom = HeadunitIcons.getCustomIcon(this, component)
-        if (custom != null) return custom
-
-        return try {
-            val pkg = component.substringBefore('/')
-            if (component.contains('/')) {
-                val cn = ComponentName(pkg, component.substringAfter('/'))
-                packageManager.getActivityInfo(cn, 0).loadIcon(packageManager)
-            } else {
-                packageManager.getApplicationIcon(pkg)
-            }
-        } catch (t: Throwable) {
-            null
-        }
+        return HeadunitIcons.resolveIcon(this, component)
     }
 
     private fun resolveAppLabel(component: String): String {

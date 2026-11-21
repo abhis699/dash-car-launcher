@@ -90,13 +90,13 @@ class AppPickerActivity : Activity() {
             // CarPlay, Android Auto, AndroidLink and Airplay as separate activities, and
             // picking "the package" would silently land on the wrong one.
             val component = "$pkg/${info.activityInfo.name}"
-            val themed = IconPacks.drawableFor(component)
-                ?: HeadunitIcons.getCustomIcon(this, component)
+            val icon = IconPacks.drawableFor(component)
+                ?: HeadunitIcons.resolveIcon(this, component, "", info.loadIcon(packageManager))
             apps.add(
                 Entry(
                     label = info.loadLabel(packageManager).toString(),
                     component = component,
-                    icon = themed ?: info.loadIcon(packageManager)
+                    icon = icon
                 )
             )
         }
