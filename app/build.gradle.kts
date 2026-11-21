@@ -23,8 +23,8 @@ android {
         // Supports Android 8.1+ (SDK 27+), targeting Android 11 (SDK 30).
         minSdk = 27
         targetSdk = 30
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     signingConfigs {
